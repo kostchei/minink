@@ -1,0 +1,621 @@
+import { fitSize, stylizeImageData } from "./processor.mjs";
+
+const PRESETS = {
+  classic: {
+    resolution: 512,
+    paletteSize: 20,
+    edgeDetail: 40,
+    outlineWidth: 1,
+    hueWeight: 82,
+    valueWeight: 52,
+    saturation: 118,
+    contrast: 110,
+    shadowLift: 20,
+    smoothing: 2,
+    regionCleanup: 2,
+    dither: 0,
+  },
+  chunky: {
+    resolution: 128,
+    paletteSize: 10,
+    edgeDetail: 44,
+    outlineWidth: 1,
+    hueWeight: 76,
+    valueWeight: 58,
+    saturation: 125,
+    contrast: 115,
+    shadowLift: 16,
+    smoothing: 2,
+    regionCleanup: 3,
+    dither: 0,
+  },
+  graphic: {
+    resolution: 288,
+    paletteSize: 9,
+    edgeDetail: 55,
+    outlineWidth: 2,
+    hueWeight: 65,
+    valueWeight: 72,
+    saturation: 112,
+    contrast: 122,
+    shadowLift: 10,
+    smoothing: 2,
+    regionCleanup: 3,
+    dither: 0,
+  },
+  soft: {
+    resolution: 320,
+    paletteSize: 18,
+    edgeDetail: 36,
+    outlineWidth: 1,
+    hueWeight: 74,
+    valueWeight: 46,
+    saturation: 108,
+    contrast: 102,
+    shadowLift: 18,
+    smoothing: 2,
+    regionCleanup: 1,
+    dither: 3,
+  },
+};
+
+const elements = {
+  fileInput: document.querySelector("#file-input"),
+  dropZone: document.querySelector("#drop-zone"),
+  sourceCanvas: document.querySelector("#source-canvas"),
+  resultCanvas: document.querySelector("#result-canvas"),
+  emptySource: document.querySelector("#empty-source"),
+  emptyResult: document.querySelector("#empty-result"),
+  sourceMeta: document.querySelector("#source-meta"),
+  outputMeta: document.querySelector("#output-meta"),
+  status: document.querySelector("#status"),
+  download: document.querySelector("#download"),
+  exportScale: document.querySelector("#export-scale"),
+  palette: document.querySelector("#palette"),
+  mlEnable: document.querySelector("#ml-enable"),
+  mlKeep: document.querySelector("#ml-keep"),
+  mlClear: document.querySelector("#ml-clear"),
+  mlStatus: document.querySelector("#ml-status"),
+  mlOverlay: document.querySelector("#ml-overlay"),
+  presetButtons: [...document.querySelectorAll("[data-preset]")],
+  controls: [...document.querySelectorAll("[data-control]")],
+};
+
+let source = null;
+let sourceName = "mini";
+let renderTimer = null;
+let renderVersion = 0;
+let mlSegmenter = null;
+let mlCurrentMask = null;
+let mlKeptMasks = [];
+let mlReady = false;
+
+elements.fileInput.addEventListener("change", (event) => {
+  const [file] = event.target.files;
+  if (file) loadFile(file);
+  event.target.value = "";
+});
+
+window.addEventListener("dragenter", handleFileDrag);
+window.addEventListener("dragover", handleFileDrag);
+window.addEventListener("dragleave", (event) => {
+  if (event.relatedTarget === null) setDraggingState(false);
+});
+window.addEventListener("drop", handleFileDrop);
+
+elements.controls.forEach((control) => {
+  control.addEventListener("input", () => {
+    syncControlReadout(control);
+    clearPresetSelection();
+    scheduleRender();
+  });
+});
+
+elements.presetButtons.forEach((button) => {
+  button.addEventListener("click", () => applyPreset(button.dataset.preset));
+});
+
+elements.download.addEventListener("click", downloadResult);
+elements.exportScale.addEventListener("change", updateOutputMeta);
+elements.mlEnable.addEventListener("click", enableMlBoundaries);
+elements.mlKeep.addEventListener("click", keepMlBoundary);
+elements.mlClear.addEventListener("click", clearMlBoundaries);
+elements.sourceCanvas.addEventListener("click", selectMlComponent);
+
+applyPreset("classic", false);
+createDemoMini();
+
+async function loadFile(file) {
+  if (!isSupportedImage(file)) {
+    setStatus("Choose an image file such as JPG, PNG, or WebP.", "error");
+    return;
+  }
+
+  setStatus("Loading photo…");
+  sourceName = sanitizeFileStem(file.name);
+
+  try {
+    let decodedImage;
+    try {
+      decodedImage = await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch {
+      decodedImage = await loadViaImageElement(file);
+    }
+    replaceSource(decodedImage);
+    setStatus("Photo ready. Adjust the style or export it.", "success");
+  } catch (error) {
+    console.error(error);
+    setStatus("That image could not be read. Try exporting it as JPG or PNG.", "error");
+  }
+}
+
+function handleFileDrag(event) {
+  if (!hasDraggedFiles(event.dataTransfer)) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+  setDraggingState(true);
+}
+
+function handleFileDrop(event) {
+  if (!hasDraggedFiles(event.dataTransfer)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  setDraggingState(false);
+
+  const file = firstDroppedFile(event.dataTransfer);
+  if (file) {
+    loadFile(file);
+  } else {
+    setStatus("The dropped item did not contain a readable image.", "error");
+  }
+}
+
+function hasDraggedFiles(dataTransfer) {
+  if (!dataTransfer) return false;
+  return Array.from(dataTransfer.types || []).includes("Files")
+    || Array.from(dataTransfer.items || []).some((item) => item.kind === "file")
+    || dataTransfer.files?.length > 0;
+}
+
+function firstDroppedFile(dataTransfer) {
+  for (const item of Array.from(dataTransfer?.items || [])) {
+    if (item.kind !== "file") continue;
+    const file = item.getAsFile();
+    if (file) return file;
+  }
+  return dataTransfer?.files?.[0] || null;
+}
+
+function isSupportedImage(file) {
+  return file.type.startsWith("image/")
+    || /\.(?:jpe?g|png|webp)$/i.test(file.name);
+}
+
+function setDraggingState(isDragging) {
+  elements.dropZone.classList.toggle("is-dragging", isDragging);
+  document.body.classList.toggle("is-file-dragging", isDragging);
+}
+
+function replaceSource(nextSource) {
+  if (source && typeof source.close === "function") source.close();
+  source = nextSource;
+  clearMlBoundaries();
+  elements.emptySource.hidden = true;
+  elements.emptyResult.hidden = true;
+  elements.download.disabled = false;
+  drawSourcePreview();
+  scheduleRender(0);
+}
+
+function drawSourcePreview() {
+  if (!source) return;
+  const { width, height } = sourceDimensions(source);
+  const previewSize = fitWithin(width, height, 900);
+  const canvas = elements.sourceCanvas;
+  canvas.width = previewSize.width;
+  canvas.height = previewSize.height;
+  const context = canvas.getContext("2d", { alpha: false });
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(source, 0, 0, canvas.width, canvas.height);
+  elements.sourceMeta.textContent = `${width} × ${height} source`;
+}
+
+function scheduleRender(delay = 140) {
+  window.clearTimeout(renderTimer);
+  renderTimer = window.setTimeout(render, delay);
+}
+
+async function render() {
+  if (!source) return;
+  const version = ++renderVersion;
+  setStatus("Drawing ink…");
+  await nextFrame();
+
+  const controls = readControls();
+  const sourceSize = sourceDimensions(source);
+  const outputSize = fitSize(sourceSize.width, sourceSize.height, controls.resolution);
+  const workCanvas = document.createElement("canvas");
+  workCanvas.width = outputSize.width;
+  workCanvas.height = outputSize.height;
+  const workContext = workCanvas.getContext("2d", { willReadFrequently: true });
+  workContext.imageSmoothingEnabled = true;
+  workContext.imageSmoothingQuality = "high";
+  workContext.drawImage(source, 0, 0, outputSize.width, outputSize.height);
+  const input = workContext.getImageData(0, 0, outputSize.width, outputSize.height);
+
+  const { imageData, palette } = stylizeImageData(input, {
+    paletteSize: controls.paletteSize,
+    edgeThreshold: detailToThreshold(controls.edgeDetail),
+    outlineWidth: controls.outlineWidth,
+    hueWeight: controls.hueWeight / 100,
+    valueWeight: controls.valueWeight / 100,
+    saturation: controls.saturation / 100,
+    contrast: controls.contrast / 100,
+    shadowLift: controls.shadowLift / 100,
+    smoothing: controls.smoothing,
+    regionCleanup: controls.regionCleanup,
+    dither: controls.dither / 100,
+    componentMap: buildComponentMap(outputSize.width, outputSize.height),
+  });
+
+  if (version !== renderVersion) return;
+  const canvas = elements.resultCanvas;
+  canvas.width = outputSize.width;
+  canvas.height = outputSize.height;
+  canvas.getContext("2d").putImageData(imageData, 0, 0);
+  drawPalette(palette);
+  updateOutputMeta();
+  setStatus("Ink pass complete.", "success");
+}
+
+function applyPreset(name, rerender = true) {
+  const preset = PRESETS[name];
+  if (!preset) return;
+
+  Object.entries(preset).forEach(([controlName, value]) => {
+    const input = document.querySelector(`[data-control="${controlName}"]`);
+    input.value = value;
+    syncControlReadout(input);
+  });
+
+  elements.presetButtons.forEach((button) => {
+    const isActive = button.dataset.preset === name;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+
+  if (rerender) scheduleRender(0);
+}
+
+function clearPresetSelection() {
+  elements.presetButtons.forEach((button) => {
+    button.classList.remove("is-active");
+    button.setAttribute("aria-pressed", "false");
+  });
+}
+
+function readControls() {
+  return Object.fromEntries(
+    elements.controls.map((control) => [
+      control.dataset.control,
+      Number(control.value),
+    ]),
+  );
+}
+
+function syncControlReadout(control) {
+  const readout = document.querySelector(`[data-value-for="${control.dataset.control}"]`);
+  const suffix = control.dataset.suffix || "";
+  if (readout) readout.textContent = `${control.value}${suffix}`;
+}
+
+function drawPalette(palette) {
+  elements.palette.replaceChildren(
+    ...palette.map((color) => {
+      const swatch = document.createElement("span");
+      swatch.style.backgroundColor = `rgb(${color.join(",")})`;
+      swatch.title = `rgb(${color.join(", ")})`;
+      return swatch;
+    }),
+  );
+}
+
+function updateOutputMeta() {
+  const canvas = elements.resultCanvas;
+  if (!canvas.width || !canvas.height || !source) return;
+  const scale = Number(elements.exportScale.value);
+  elements.outputMeta.textContent = (
+    `${canvas.width} × ${canvas.height} art · ${canvas.width * scale} × ${canvas.height * scale} export`
+  );
+}
+
+function downloadResult() {
+  const sourceCanvas = elements.resultCanvas;
+  if (!source || !sourceCanvas.width) return;
+
+  const scale = Number(elements.exportScale.value);
+  const exportCanvas = document.createElement("canvas");
+  exportCanvas.width = sourceCanvas.width * scale;
+  exportCanvas.height = sourceCanvas.height * scale;
+  const context = exportCanvas.getContext("2d");
+  context.imageSmoothingEnabled = false;
+  context.drawImage(sourceCanvas, 0, 0, exportCanvas.width, exportCanvas.height);
+
+  exportCanvas.toBlob((blob) => {
+    if (!blob) return;
+    const link = document.createElement("a");
+    const objectUrl = URL.createObjectURL(blob);
+    link.href = objectUrl;
+    link.download = `${sourceName}-mini-ink-${sourceCanvas.width}x${sourceCanvas.height}.png`;
+    link.click();
+    URL.revokeObjectURL(objectUrl);
+  }, "image/png");
+}
+
+function createDemoMini() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 720;
+  canvas.height = 720;
+  const context = canvas.getContext("2d");
+
+  context.fillStyle = "#d9d0bd";
+  context.fillRect(0, 0, 720, 720);
+  const vignette = context.createRadialGradient(360, 310, 60, 360, 360, 520);
+  vignette.addColorStop(0, "rgba(255,255,255,.9)");
+  vignette.addColorStop(1, "rgba(43,35,36,.3)");
+  context.fillStyle = vignette;
+  context.fillRect(0, 0, 720, 720);
+
+  context.save();
+  context.translate(360, 380);
+  context.shadowColor = "rgba(26,22,24,.38)";
+  context.shadowBlur = 28;
+  context.shadowOffsetY = 20;
+  context.fillStyle = "#29282a";
+  context.beginPath();
+  context.ellipse(0, 242, 178, 54, 0, 0, Math.PI * 2);
+  context.fill();
+  context.shadowColor = "transparent";
+
+  context.fillStyle = "#7b858c";
+  context.fillRect(-72, 3, 144, 206);
+  context.fillStyle = "#343a40";
+  context.fillRect(-45, 46, 90, 121);
+  context.fillStyle = "#c5c1b5";
+  context.fillRect(-24, 64, 48, 76);
+  context.fillStyle = "#9d342c";
+  context.fillRect(-17, 78, 34, 48);
+
+  context.fillStyle = "#313a39";
+  context.beginPath();
+  context.moveTo(-76, 8);
+  context.lineTo(-130, 72);
+  context.lineTo(-92, 158);
+  context.lineTo(-51, 112);
+  context.closePath();
+  context.fill();
+  context.beginPath();
+  context.moveTo(76, 8);
+  context.lineTo(130, 72);
+  context.lineTo(92, 158);
+  context.lineTo(51, 112);
+  context.closePath();
+  context.fill();
+
+  context.fillStyle = "#5a625e";
+  context.fillRect(-91, 202, 58, 38);
+  context.fillRect(33, 202, 58, 38);
+
+  context.fillStyle = "#a43d32";
+  context.beginPath();
+  context.moveTo(-76, 10);
+  context.lineTo(-52, -91);
+  context.lineTo(0, -126);
+  context.lineTo(52, -91);
+  context.lineTo(76, 10);
+  context.closePath();
+  context.fill();
+  context.fillStyle = "#d4b56a";
+  context.beginPath();
+  context.arc(0, -68, 35, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = "#26292c";
+  context.fillRect(-50, -134, 100, 44);
+
+  context.strokeStyle = "#292a2d";
+  context.lineWidth = 18;
+  context.lineCap = "round";
+  context.beginPath();
+  context.moveTo(-106, 67);
+  context.lineTo(-174, 15);
+  context.moveTo(106, 67);
+  context.lineTo(174, 15);
+  context.stroke();
+  context.strokeStyle = "#b7b7ae";
+  context.lineWidth = 7;
+  context.beginPath();
+  context.moveTo(174, 15);
+  context.lineTo(210, -79);
+  context.stroke();
+  context.restore();
+
+  sourceName = "demo-guardian";
+  replaceSource(canvas);
+}
+
+function setStatus(message, tone = "neutral") {
+  elements.status.textContent = message;
+  elements.status.dataset.tone = tone;
+}
+
+function detailToThreshold(detail) {
+  return 0.43 - (detail / 100) * 0.3;
+}
+
+function sourceDimensions(input) {
+  return {
+    width: input.naturalWidth || input.width,
+    height: input.naturalHeight || input.height,
+  };
+}
+
+function fitWithin(width, height, maxLongEdge) {
+  if (Math.max(width, height) <= maxLongEdge) return { width, height };
+  return fitSize(width, height, maxLongEdge);
+}
+
+function sanitizeFileStem(filename) {
+  return filename
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase() || "mini";
+}
+
+function loadViaImageElement(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("The selected image could not be read."));
+    };
+    image.src = objectUrl;
+  });
+}
+
+function nextFrame() {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+async function enableMlBoundaries() {
+  if (!source) return;
+  elements.mlEnable.disabled = true;
+
+  try {
+    if (!mlSegmenter) {
+      setMlStatus("Loading local ML model… first use downloads its files.");
+      const { ComponentSegmenter } = await import("./ml-segmenter.mjs");
+      mlSegmenter = new ComponentSegmenter((message) => setMlStatus(message));
+      await mlSegmenter.load();
+    }
+
+    setMlStatus("Learning this photo’s component shapes…");
+    await mlSegmenter.encode(elements.sourceCanvas);
+    mlReady = true;
+    elements.mlEnable.textContent = "ML ready";
+    elements.sourceCanvas.classList.add("is-ml-ready");
+    setMlStatus("Click a component in the original, then keep its boundary.");
+  } catch (error) {
+    console.error(error);
+    setMlStatus("ML could not start. The hue + value detector is still active.", true);
+    elements.mlEnable.disabled = false;
+  }
+}
+
+async function selectMlComponent(event) {
+  if (!mlReady || !mlSegmenter) return;
+
+  const bounds = elements.sourceCanvas.getBoundingClientRect();
+  const point = [
+    (event.clientX - bounds.left) / bounds.width,
+    (event.clientY - bounds.top) / bounds.height,
+  ];
+
+  setMlStatus("Finding that component…");
+  elements.sourceCanvas.classList.add("is-ml-working");
+
+  try {
+    mlCurrentMask = await mlSegmenter.segment(point);
+    drawMlOverlay();
+    elements.mlKeep.disabled = false;
+    setMlStatus("Mask ready. Keep it, or click another part to try again.");
+  } catch (error) {
+    console.error(error);
+    setMlStatus("That component could not be isolated. Try another point.", true);
+  } finally {
+    elements.sourceCanvas.classList.remove("is-ml-working");
+  }
+}
+
+function keepMlBoundary() {
+  if (!mlCurrentMask) return;
+  mlKeptMasks.push(mlCurrentMask);
+  mlCurrentMask = null;
+  elements.mlKeep.disabled = true;
+  drawMlOverlay();
+  setMlStatus(`${mlKeptMasks.length} ML component ${mlKeptMasks.length === 1 ? "line" : "lines"} kept.`);
+  scheduleRender(0);
+}
+
+function clearMlBoundaries() {
+  mlCurrentMask = null;
+  mlKeptMasks = [];
+  mlReady = false;
+  elements.mlKeep.disabled = true;
+  elements.mlEnable.disabled = false;
+  elements.mlEnable.textContent = mlSegmenter ? "Re-scan photo" : "Enable ML boundaries";
+  elements.sourceCanvas.classList.remove("is-ml-ready", "is-ml-working");
+  setMlStatus("Optional: click-pick physical components with local ML.");
+  drawMlOverlay();
+}
+
+function drawMlOverlay() {
+  const overlay = elements.mlOverlay;
+  const sourceCanvas = elements.sourceCanvas;
+  overlay.width = sourceCanvas.width;
+  overlay.height = sourceCanvas.height;
+  const context = overlay.getContext("2d");
+  context.clearRect(0, 0, overlay.width, overlay.height);
+
+  const masks = [
+    ...mlKeptMasks.map((mask) => ({ mask, color: [105, 213, 219, 70] })),
+    ...(mlCurrentMask ? [{ mask: mlCurrentMask, color: [215, 255, 100, 100] }] : []),
+  ];
+  const imageData = context.createImageData(overlay.width, overlay.height);
+
+  for (const { mask, color } of masks) {
+    for (let index = 0; index < mask.data.length; index += 1) {
+      if (!mask.data[index]) continue;
+      const offset = index * 4;
+      imageData.data[offset] = color[0];
+      imageData.data[offset + 1] = color[1];
+      imageData.data[offset + 2] = color[2];
+      imageData.data[offset + 3] = color[3];
+    }
+  }
+
+  context.putImageData(imageData, 0, 0);
+}
+
+function buildComponentMap(width, height) {
+  if (mlKeptMasks.length === 0) return null;
+  const map = new Uint16Array(width * height);
+  const sourceWidth = mlKeptMasks[0].width;
+  const sourceHeight = mlKeptMasks[0].height;
+
+  mlKeptMasks.forEach((mask, maskIndex) => {
+    for (let y = 0; y < height; y += 1) {
+      const sourceY = Math.min(sourceHeight - 1, Math.floor(y * sourceHeight / height));
+      for (let x = 0; x < width; x += 1) {
+        const sourceX = Math.min(sourceWidth - 1, Math.floor(x * sourceWidth / width));
+        if (mask.data[sourceY * sourceWidth + sourceX]) {
+          map[y * width + x] = maskIndex + 1;
+        }
+      }
+    }
+  });
+
+  return map;
+}
+
+function setMlStatus(message, isError = false) {
+  if (!elements.mlStatus) return;
+  elements.mlStatus.textContent = message;
+  elements.mlStatus.classList.toggle("is-error", isError);
+}

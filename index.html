@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="A private, local photo-to-comic pixel art tool for tabletop miniatures."
+    >
+    <title>Mini Ink — Local miniature art stylizer</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="protocol-warning" id="protocol-warning" hidden>
+      <strong>Mini Ink needs its local launcher.</strong>
+      Browser security blocks the image code when this HTML file is opened
+      directly. Close this tab and double-click <b>Start Mini Ink.cmd</b>.
+    </div>
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Mini Ink home">
+        <span class="brand-mark" aria-hidden="true">MI</span>
+        <span>
+          <strong>Mini Ink</strong>
+          <small>tabletop photo lab</small>
+        </span>
+      </a>
+      <div class="privacy-pill">
+        <span aria-hidden="true"></span>
+        Private by design · nothing is uploaded
+      </div>
+    </header>
+
+    <main>
+      <section class="intro">
+        <p class="eyebrow">LOCAL COMIC PROCESSOR / v1.0</p>
+        <h1>Turn painted minis into <em>punchy pixel art.</em></h1>
+        <p class="lede">
+          Reduce a photo to a miniature-aware color palette, preserve the silhouette,
+          and ink the major armor, cloth, and weapon boundaries.
+        </p>
+      </section>
+
+      <section class="workspace" aria-label="Miniature image workspace">
+        <aside class="controls-panel">
+          <label class="drop-zone" id="drop-zone">
+            <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp">
+            <span class="drop-icon" aria-hidden="true">＋</span>
+            <span>
+              <strong>Drop a mini photo</strong>
+              <small>or click to choose JPG, PNG, or WebP</small>
+            </span>
+          </label>
+
+          <div class="control-section">
+            <div class="section-heading">
+              <span>01</span>
+              <h2>Art direction</h2>
+            </div>
+            <div class="preset-grid">
+              <button type="button" data-preset="classic">Classic ink</button>
+              <button type="button" data-preset="chunky">Chunky sprite</button>
+              <button type="button" data-preset="graphic">Dark graphic</button>
+              <button type="button" data-preset="soft">Soft toon</button>
+            </div>
+          </div>
+
+          <div class="control-section">
+            <div class="section-heading">
+              <span>02</span>
+              <h2>Pixel pass</h2>
+            </div>
+
+            <label class="range-control">
+              <span>
+                Resolution
+                <output data-value-for="resolution">96 px</output>
+              </span>
+              <input
+                type="range"
+                min="128"
+                max="1024"
+                step="32"
+                value="512"
+                data-control="resolution"
+                data-suffix=" px"
+              >
+            </label>
+
+            <label class="range-control">
+              <span>
+                Palette
+                <output data-value-for="paletteSize">20 colors</output>
+              </span>
+              <input
+                type="range"
+                min="3"
+                max="24"
+                value="20"
+                data-control="paletteSize"
+                data-suffix=" colors"
+              >
+            </label>
+
+            <label class="range-control">
+              <span>
+                Edge detail
+                <output data-value-for="edgeDetail">40%</output>
+              </span>
+              <input
+                type="range"
+                min="10"
+                max="90"
+                value="40"
+                data-control="edgeDetail"
+                data-suffix="%"
+              >
+            </label>
+
+            <label class="range-control">
+              <span>
+                Ink weight
+                <output data-value-for="outlineWidth">1 px</output>
+              </span>
+              <input
+                type="range"
+                min="1"
+                max="3"
+                value="1"
+                data-control="outlineWidth"
+                data-suffix=" px"
+              >
+            </label>
+
+            <label class="range-control">
+              <span>
+                Hue boundary
+                <output data-value-for="hueWeight">82%</output>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="120"
+                value="82"
+                data-control="hueWeight"
+                data-suffix="%"
+              >
+            </label>
+
+            <label class="range-control">
+              <span>
+                Value boundary
+                <output data-value-for="valueWeight">52%</output>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="120"
+                value="52"
+                data-control="valueWeight"
+                data-suffix="%"
+              >
+            </label>
+          </div>
+
+          <details class="advanced">
+            <summary>Color & cleanup</summary>
+            <div class="advanced-content">
+              <label class="range-control">
+                <span>
+                  Saturation
+                  <output data-value-for="saturation">118%</output>
+                </span>
+                <input
+                  type="range"
+                  min="50"
+                  max="180"
+                  value="118"
+                  data-control="saturation"
+                  data-suffix="%"
+                >
+              </label>
+              <label class="range-control">
+                <span>
+                  Contrast
+                  <output data-value-for="contrast">110%</output>
+                </span>
+                <input
+                  type="range"
+                  min="70"
+                  max="160"
+                  value="110"
+                  data-control="contrast"
+                  data-suffix="%"
+                >
+              </label>
+              <label class="range-control">
+                <span>
+                  Shadow lift
+                  <output data-value-for="shadowLift">20%</output>
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="45"
+                  value="20"
+                  data-control="shadowLift"
+                  data-suffix="%"
+                >
+              </label>
+              <label class="range-control">
+                <span>
+                  Photo smoothing
+                  <output data-value-for="smoothing">2</output>
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="3"
+                  value="2"
+                  data-control="smoothing"
+                >
+              </label>
+              <label class="range-control">
+                <span>
+                  Component cleanup
+                  <output data-value-for="regionCleanup">2</output>
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="3"
+                  value="2"
+                  data-control="regionCleanup"
+                >
+              </label>
+              <label class="range-control">
+                <span>
+                  Pixel dither
+                  <output data-value-for="dither">0%</output>
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="40"
+                  value="0"
+                  data-control="dither"
+                  data-suffix="%"
+                >
+              </label>
+            </div>
+          </details>
+
+          <div class="control-section ml-section">
+            <div class="section-heading">
+              <span>03</span>
+              <h2>ML component lines</h2>
+            </div>
+            <p id="ml-status">
+              Optional: click-pick physical components with local ML.
+            </p>
+            <div class="ml-actions">
+              <button id="ml-enable" type="button">Enable ML boundaries</button>
+              <button id="ml-keep" type="button" disabled>Keep component line</button>
+              <button id="ml-clear" type="button">Clear ML lines</button>
+            </div>
+            <small>
+              First use downloads the SlimSAM model. The photo and inference stay
+              in this browser.
+            </small>
+          </div>
+        </aside>
+
+        <div class="canvas-area">
+          <div class="artboard-grid">
+            <article class="artboard">
+              <header>
+                <span>Original</span>
+                <small id="source-meta">No source</small>
+              </header>
+              <div class="canvas-wrap checkerboard">
+                <canvas id="source-canvas"></canvas>
+                <canvas id="ml-overlay" aria-hidden="true"></canvas>
+                <div class="empty-state" id="empty-source">
+                  <strong>Waiting for a miniature</strong>
+                  <span>Your source photo appears here.</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="artboard result-artboard">
+              <header>
+                <span>Mini Ink</span>
+                <small id="output-meta">No output</small>
+              </header>
+              <div class="canvas-wrap checkerboard">
+                <canvas id="result-canvas"></canvas>
+                <div class="empty-state" id="empty-result">
+                  <strong>Ready for the ink pass</strong>
+                  <span>The processed pixel art appears here.</span>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <footer class="export-bar">
+            <div class="render-state" aria-live="polite">
+              <span class="status-light" aria-hidden="true"></span>
+              <div>
+                <strong id="status">Ready.</strong>
+                <div id="palette" class="palette" aria-label="Generated color palette"></div>
+              </div>
+            </div>
+            <div class="export-actions">
+              <label>
+                Export size
+                <select id="export-scale">
+                  <option value="1">1× true pixels</option>
+                  <option value="4">4× crisp</option>
+                  <option value="8" selected>8× crisp</option>
+                </select>
+              </label>
+              <button id="download" class="download-button" type="button" disabled>
+                Download PNG
+                <span aria-hidden="true">↓</span>
+              </button>
+            </div>
+          </footer>
+        </div>
+      </section>
+
+      <section class="tips" aria-label="Photo tips">
+        <p class="eyebrow">BETTER SOURCE / BETTER SPRITE</p>
+        <div>
+          <p><strong>Light from the front.</strong> Clear shadows help the ink pass find armor plates and cloth folds.</p>
+          <p><strong>Use a plain backdrop.</strong> A contrasting sheet of paper keeps the miniature silhouette readable.</p>
+          <p><strong>Fill the frame.</strong> Crop close before loading for more detail at small output sizes.</p>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      if (location.protocol === "file:") {
+        document.querySelector("#protocol-warning").hidden = false;
+      }
+    </script>
+    <script type="module" src="./app.mjs"></script>
+  </body>
+</html>
