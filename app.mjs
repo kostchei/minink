@@ -89,6 +89,8 @@ const elements = {
   mlEnable: document.querySelector("#ml-enable"),
   mlKeep: document.querySelector("#ml-keep"),
   mlClear: document.querySelector("#ml-clear"),
+  mlOverlay: document.querySelector("#ml-overlay"),
+  mlStatus: document.querySelector("#ml-status"),
   suppressInnerLines: document.querySelector("#suppress-inner-lines"),
   fillColorSelect: document.querySelector("#fill-color-select"),
   fillComponent: document.querySelector("#fill-component"),
@@ -103,6 +105,8 @@ const elements = {
   quickEraserToggle: document.querySelector("#quick-eraser-toggle"),
   quickFillComponent: document.querySelector("#quick-fill-component"),
   quickClearBg: document.querySelector("#quick-clear-bg"),
+  controls: Array.from(document.querySelectorAll("[data-control]")),
+  presetButtons: Array.from(document.querySelectorAll("[data-preset]")),
 };
 
 let source = null;
@@ -755,17 +759,22 @@ function clearMlBoundaries() {
 }
 
 function drawMlOverlay() {
-  const overlay = elements.mlOverlay;
-  const sourceCanvas = elements.sourceCanvas;
+  const overlay = elements.mlOverlay || document.querySelector("#ml-overlay");
+  const sourceCanvas = elements.sourceCanvas || document.querySelector("#source-canvas");
+  if (!overlay || !sourceCanvas || !sourceCanvas.width) return;
+
   overlay.width = sourceCanvas.width;
   overlay.height = sourceCanvas.height;
   const context = overlay.getContext("2d");
+  if (!context) return;
   context.clearRect(0, 0, overlay.width, overlay.height);
 
   const masks = [
     ...mlKeptMasks.map((mask) => ({ mask, color: [105, 213, 219, 70] })),
     ...(mlCurrentMask ? [{ mask: mlCurrentMask, color: [215, 255, 100, 100] }] : []),
   ];
+  if (masks.length === 0) return;
+
   const imageData = context.createImageData(overlay.width, overlay.height);
 
   for (const { mask, color } of masks) {
