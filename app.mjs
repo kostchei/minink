@@ -583,10 +583,10 @@ function detailToThreshold(detail) {
 }
 
 function sourceDimensions(input) {
-  return {
-    width: input.naturalWidth || input.width,
-    height: input.naturalHeight || input.height,
-  };
+  if (!input) return { width: 1, height: 1 };
+  const width = Math.max(1, Math.round(Number(input.naturalWidth || input.width) || 1));
+  const height = Math.max(1, Math.round(Number(input.naturalHeight || input.height) || 1));
+  return { width, height };
 }
 
 function fitWithin(width, height, maxLongEdge) {
@@ -604,15 +604,15 @@ function sanitizeFileStem(filename) {
 
 async function decodeImageFile(file) {
   try {
+    return await loadViaImageElement(file);
+  } catch {}
+
+  try {
     return await createImageBitmap(file, { imageOrientation: "from-image" });
   } catch {}
 
   try {
     return await createImageBitmap(file);
-  } catch {}
-
-  try {
-    return await loadViaImageElement(file);
   } catch {}
 
   return await loadViaDataUrl(file);
@@ -623,7 +623,6 @@ function loadViaImageElement(file) {
     const image = new Image();
     const objectUrl = URL.createObjectURL(file);
     image.onload = () => {
-      URL.revokeObjectURL(objectUrl);
       resolve(image);
     };
     image.onerror = () => {
