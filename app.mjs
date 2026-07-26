@@ -193,31 +193,57 @@ if (elements.resultCanvas) {
 applyPreset("classic", false);
 createDemoMini();
 
+window.addEventListener("paste", async (event) => {
+  const items = event.clipboardData?.items || [];
+  for (const item of items) {
+    if (item.type && item.type.startsWith("image/")) {
+      const file = item.getAsFile();
+      if (file) {
+        loadFile(file);
+        return;
+      }
+    }
+  }
+  const text = event.clipboardData?.getData("text/plain");
+  if (text && /^https?:\/\/.+/i.test(text.trim())) {
+    try {
+      setStatus("Fetching pasted image URL…");
+      const response = await fetch(text.trim());
+      const blob = await response.blob();
+      if (blob.type.startsWith("image/")) {
+        const file = new File([blob], "pasted-image.png", { type: blob.type });
+        loadFile(file);
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus("Could not load image from pasted URL.", "error");
+    }
+  }
+});
+
 async function loadFile(file) {
-  if (!isSupportedImage(file)) {
+  if (!file) return;
+  const processedFile = await convertHeicIfNeeded(file);
+
+  if (!isSupportedImage(processedFile)) {
     setStatus("Choose an image file such as JPG, PNG, WebP, AVIF, or BMP.", "error");
     return;
   }
 
   setStatus("Loading photo…");
-  sourceName = sanitizeFileStem(file.name);
+  sourceName = sanitizeFileStem(processedFile.name || "mini");
 
   try {
-    let decodedImage;
-    try {
-      decodedImage = await createImageBitmap(file, { imageOrientation: "from-image" });
-    } catch {
-      decodedImage = await loadViaImageElement(file);
-    }
+    const decodedImage = await decodeImageFile(processedFile);
     replaceSource(decodedImage);
     setStatus("Photo ready. Adjust the style or export it.", "success");
   } catch (error) {
     console.error(error);
-    const isHeic = /\.(?:heic|heif)$/i.test(file.name);
+    const isHeic = /\.(?:heic|heif)$/i.test(processedFile.name || "");
     if (isHeic) {
-      setStatus("HEIC photos are not natively supported by your browser. Please convert to JPG, PNG, or WebP.", "error");
+      setStatus("HEIC photos could not be decoded. Please convert to JPG or PNG.", "error");
     } else {
-      setStatus("That image format could not be read by your browser. Try converting it to JPG or PNG.", "error");
+      setStatus(`Could not read image: ${error.message || "Unknown error"}. Try converting to JPG/PNG.`, "error");
     }
   }
 }
@@ -229,13 +255,29 @@ function handleFileDrag(event) {
   setDraggingState(true);
 }
 
-function handleFileDrop(event) {
+async function handleFileDrop(event) {
   if (!hasDraggedFiles(event.dataTransfer)) return;
   event.preventDefault();
   event.stopPropagation();
   setDraggingState(false);
 
-  const file = firstDroppedFile(event.dataTransfer);
+  let file = firstDroppedFile(event.dataTransfer);
+  if (!file) {
+    const url = event.dataTransfer.getData("text/uri-list") || event.dataTransfer.getData("text/plain");
+    if (url && /^https?:\/\/.+/i.test(url.trim())) {
+      try {
+        setStatus("Fetching dropped image URL…");
+        const response = await fetch(url.trim());
+        const blob = await response.blob();
+        if (blob.type.startsWith("image/")) {
+          file = new File([blob], "dropped-image.png", { type: blob.type });
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  }
+
   if (file) {
     loadFile(file);
   } else {
@@ -556,6 +598,22 @@ function sanitizeFileStem(filename) {
     .toLowerCase() || "mini";
 }
 
+async function decodeImageFile(file) {
+  try {
+    return await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {}
+
+  try {
+    return await createImageBitmap(file);
+  } catch {}
+
+  try {
+    return await loadViaImageElement(file);
+  } catch {}
+
+  return await loadViaDataUrl(file);
+}
+
 function loadViaImageElement(file) {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -569,6 +627,50 @@ function loadViaImageElement(file) {
       reject(new Error("The selected image could not be read."));
     };
     image.src = objectUrl;
+  });
+}
+
+function loadViaDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("Failed to decode image from Data URL."));
+      image.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error("Failed to read image file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function convertHeicIfNeeded(file) {
+  const isHeic = /\.(?:heic|heif)$/i.test(file.name || "") || file.type === "image/heic" || file.type === "image/heif";
+  if (!isHeic) return file;
+
+  setStatus("Converting HEIC photo…");
+  try {
+    if (!window.heic2any) {
+      await loadScript("https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js");
+    }
+    if (window.heic2any) {
+      const result = await window.heic2any({ blob: file, toType: "image/png" });
+      const convertedBlob = Array.isArray(result) ? result[0] : result;
+      return new File([convertedBlob], (file.name || "photo").replace(/\.(?:heic|heif)$/i, ".png"), { type: "image/png" });
+    }
+  } catch (err) {
+    console.warn("HEIC auto-conversion skipped:", err);
+  }
+  return file;
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
   });
 }
 
