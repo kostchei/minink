@@ -1,21 +1,8 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-set SCRIPT="%TEMP%\CreateShortcut.vbs"
-set SHORTCUT=%USERPROFILE%\Desktop\Mini Ink.lnk
-set TARGET=%~dp0Start Mini Ink.cmd
-set ICON=%~dp0icon.ico
 
-echo Set oWS = WScript.CreateObject("WScript.Shell") > %SCRIPT%
-echo sLinkFile = "%SHORTCUT%" >> %SCRIPT%
-echo Set oLink = oWS.CreateShortcut(sLinkFile) >> %SCRIPT%
-echo oLink.TargetPath = "%TARGET%" >> %SCRIPT%
-echo oLink.WorkingDirectory = "%~dp0" >> %SCRIPT%
-echo oLink.IconLocation = "%ICON%" >> %SCRIPT%
-echo oLink.Save >> %SCRIPT%
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $target = '%~dp0Start Mini Ink.cmd'; $work = '%~dp0'; $icon = '%~dp0icon.ico'; $desk = $ws.SpecialFolders('Desktop') + '\Mini Ink.lnk'; $s = $ws.CreateShortcut($desk); $s.TargetPath = $target; $s.WorkingDirectory = $work; if (Test-Path $icon) { $s.IconLocation = $icon }; $s.Save()"
 
-cscript //nologo %SCRIPT%
-del %SCRIPT%
-
-echo Desktop shortcut created for Mini Ink with cute paintbrush icon!
+echo Desktop shortcut created for current user with cute paintbrush icon!
 endlocal
