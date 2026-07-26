@@ -6,7 +6,15 @@ contours around strong color and light boundaries.
 
 ## Run locally
 
-On Windows, double-click:
+On Windows, run:
+
+```text
+Install Mini Ink.cmd
+```
+
+This installer verifies Python, creates a **Desktop shortcut** and **Start Menu shortcut** with the cute paintbrush icon, and optionally launches Mini Ink.
+
+Or double-click:
 
 ```text
 Start Mini Ink.cmd
