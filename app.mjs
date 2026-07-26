@@ -75,10 +75,17 @@ const elements = {
   mlEnable: document.querySelector("#ml-enable"),
   mlKeep: document.querySelector("#ml-keep"),
   mlClear: document.querySelector("#ml-clear"),
-  mlStatus: document.querySelector("#ml-status"),
-  mlOverlay: document.querySelector("#ml-overlay"),
-  presetButtons: [...document.querySelectorAll("[data-preset]")],
-  controls: [...document.querySelectorAll("[data-control]")],
+  suppressInnerLines: document.querySelector("#suppress-inner-lines"),
+  fillColorSelect: document.querySelector("#fill-color-select"),
+  fillComponent: document.querySelector("#fill-component"),
+  clearBackground: document.querySelector("#clear-background"),
+  resetFills: document.querySelector("#reset-fills"),
+  toolSelect: document.querySelector("#tool-select"),
+  toolEraser: document.querySelector("#tool-eraser"),
+  eraserSize: document.querySelector("#eraser-size"),
+  clearErased: document.querySelector("#clear-erased"),
+  eraserOverlay: document.querySelector("#eraser-overlay"),
+  resultArtboard: document.querySelector(".result-artboard"),
 };
 
 let source = null;
@@ -89,6 +96,15 @@ let mlSegmenter = null;
 let mlCurrentMask = null;
 let mlKeptMasks = [];
 let mlReady = false;
+
+let currentTool = "select";
+let fillColorSelection = "cream";
+let fillColorsMap = new Map();
+let backgroundFillColor = null;
+let erasedLinesMask = null;
+let erasedMaskWidth = 0;
+let erasedMaskHeight = 0;
+let isErasing = false;
 
 elements.fileInput.addEventListener("change", (event) => {
   const [file] = event.target.files;
@@ -121,6 +137,33 @@ elements.mlEnable.addEventListener("click", enableMlBoundaries);
 elements.mlKeep.addEventListener("click", keepMlBoundary);
 elements.mlClear.addEventListener("click", clearMlBoundaries);
 elements.sourceCanvas.addEventListener("click", selectMlComponent);
+
+if (elements.fillComponent) elements.fillComponent.addEventListener("click", fillComponentAction);
+if (elements.clearBackground) elements.clearBackground.addEventListener("click", clearBackgroundAction);
+if (elements.resetFills) elements.resetFills.addEventListener("click", resetFillsAction);
+if (elements.suppressInnerLines) elements.suppressInnerLines.addEventListener("change", () => scheduleRender(0));
+if (elements.fillColorSelect) {
+  elements.fillColorSelect.addEventListener("change", (event) => {
+    fillColorSelection = event.target.value;
+  });
+}
+if (elements.toolSelect && elements.toolEraser) {
+  elements.toolSelect.addEventListener("click", () => setToolMode("select"));
+  elements.toolEraser.addEventListener("click", () => setToolMode("eraser"));
+}
+if (elements.eraserSize) {
+  elements.eraserSize.addEventListener("input", () => {
+    syncControlReadout(elements.eraserSize);
+  });
+}
+if (elements.clearErased) elements.clearErased.addEventListener("click", clearErasedLinesAction);
+
+if (elements.resultCanvas) {
+  elements.resultCanvas.addEventListener("pointerdown", handlePointerDown);
+  elements.resultCanvas.addEventListener("pointermove", handlePointerMove);
+  window.addEventListener("pointerup", handlePointerUp);
+  elements.resultCanvas.addEventListener("pointerleave", clearEraserOverlay);
+}
 
 applyPreset("classic", false);
 createDemoMini();
@@ -200,6 +243,8 @@ function replaceSource(nextSource) {
   if (source && typeof source.close === "function") source.close();
   source = nextSource;
   clearMlBoundaries();
+  clearFills();
+  clearErasedLinesAction();
   elements.emptySource.hidden = true;
   elements.emptyResult.hidden = true;
   elements.download.disabled = false;
@@ -244,6 +289,7 @@ async function render() {
   workContext.drawImage(source, 0, 0, outputSize.width, outputSize.height);
   const input = workContext.getImageData(0, 0, outputSize.width, outputSize.height);
 
+  const componentMap = buildComponentMap(outputSize.width, outputSize.height);
   const { imageData, palette } = stylizeImageData(input, {
     paletteSize: controls.paletteSize,
     edgeThreshold: detailToThreshold(controls.edgeDetail),
@@ -256,7 +302,12 @@ async function render() {
     smoothing: controls.smoothing,
     regionCleanup: controls.regionCleanup,
     dither: controls.dither / 100,
-    componentMap: buildComponentMap(outputSize.width, outputSize.height),
+    componentMap,
+    suppressInnerLines: elements.suppressInnerLines ? elements.suppressInnerLines.checked : true,
+    fillMap: componentMap,
+    fillColors: fillColorsMap,
+    backgroundFill: backgroundFillColor,
+    erasedLinesMask: (erasedLinesMask && erasedMaskWidth === outputSize.width && erasedMaskHeight === outputSize.height) ? erasedLinesMask : null,
   });
 
   if (version !== renderVersion) return;
@@ -534,7 +585,9 @@ async function selectMlComponent(event) {
     mlCurrentMask = await mlSegmenter.segment(point);
     drawMlOverlay();
     elements.mlKeep.disabled = false;
+    if (elements.fillComponent) elements.fillComponent.disabled = false;
     setMlStatus("Mask ready. Keep it, or click another part to try again.");
+    scheduleRender(0);
   } catch (error) {
     console.error(error);
     setMlStatus("That component could not be isolated. Try another point.", true);
@@ -548,6 +601,7 @@ function keepMlBoundary() {
   mlKeptMasks.push(mlCurrentMask);
   mlCurrentMask = null;
   elements.mlKeep.disabled = true;
+  if (elements.fillComponent) elements.fillComponent.disabled = false;
   drawMlOverlay();
   setMlStatus(`${mlKeptMasks.length} ML component ${mlKeptMasks.length === 1 ? "line" : "lines"} kept.`);
   scheduleRender(0);
@@ -558,6 +612,7 @@ function clearMlBoundaries() {
   mlKeptMasks = [];
   mlReady = false;
   elements.mlKeep.disabled = true;
+  if (elements.fillComponent) elements.fillComponent.disabled = true;
   elements.mlEnable.disabled = false;
   elements.mlEnable.textContent = mlSegmenter ? "Re-scan photo" : "Enable ML boundaries";
   elements.sourceCanvas.classList.remove("is-ml-ready", "is-ml-working");
@@ -594,12 +649,17 @@ function drawMlOverlay() {
 }
 
 function buildComponentMap(width, height) {
-  if (mlKeptMasks.length === 0) return null;
-  const map = new Uint16Array(width * height);
-  const sourceWidth = mlKeptMasks[0].width;
-  const sourceHeight = mlKeptMasks[0].height;
+  const masksToInclude = [...mlKeptMasks];
+  if (mlCurrentMask && !mlKeptMasks.includes(mlCurrentMask)) {
+    masksToInclude.push(mlCurrentMask);
+  }
+  if (masksToInclude.length === 0) return null;
 
-  mlKeptMasks.forEach((mask, maskIndex) => {
+  const map = new Uint16Array(width * height);
+  const sourceWidth = masksToInclude[0].width;
+  const sourceHeight = masksToInclude[0].height;
+
+  masksToInclude.forEach((mask, maskIndex) => {
     for (let y = 0; y < height; y += 1) {
       const sourceY = Math.min(sourceHeight - 1, Math.floor(y * sourceHeight / height));
       for (let x = 0; x < width; x += 1) {
@@ -618,4 +678,167 @@ function setMlStatus(message, isError = false) {
   if (!elements.mlStatus) return;
   elements.mlStatus.textContent = message;
   elements.mlStatus.classList.toggle("is-error", isError);
+}
+
+function fillComponentAction() {
+  if (mlCurrentMask && !mlKeptMasks.includes(mlCurrentMask)) {
+    mlKeptMasks.push(mlCurrentMask);
+    mlCurrentMask = null;
+    elements.mlKeep.disabled = true;
+    drawMlOverlay();
+  }
+  if (mlKeptMasks.length === 0) return;
+  const targetIndex = mlKeptMasks.length;
+  fillColorsMap.set(targetIndex, getRGBAForFillSelection(fillColorSelection));
+  scheduleRender(0);
+  setMlStatus(`Component ${targetIndex} filled.`);
+}
+
+function clearBackgroundAction() {
+  backgroundFillColor = getRGBAForFillSelection(fillColorSelection);
+  scheduleRender(0);
+  setStatus("Background cleared.", "success");
+}
+
+function resetFillsAction() {
+  clearFills();
+  scheduleRender(0);
+  setStatus("Fills reset.", "success");
+}
+
+function clearFills() {
+  fillColorsMap.clear();
+  backgroundFillColor = null;
+}
+
+function clearErasedLinesAction() {
+  erasedLinesMask = null;
+  erasedMaskWidth = 0;
+  erasedMaskHeight = 0;
+  clearEraserOverlay();
+  scheduleRender(0);
+  setStatus("Erased lines restored.", "success");
+}
+
+function setToolMode(mode) {
+  currentTool = mode;
+  if (elements.toolSelect) elements.toolSelect.classList.toggle("is-active", mode === "select");
+  if (elements.toolEraser) elements.toolEraser.classList.toggle("is-active", mode === "eraser");
+  if (elements.resultArtboard) elements.resultArtboard.classList.toggle("is-eraser-mode", mode === "eraser");
+  if (mode !== "eraser") {
+    clearEraserOverlay();
+  }
+}
+
+function getRGBAForFillSelection(selection) {
+  switch (selection) {
+    case "transparent":
+      return [0, 0, 0, 0];
+    case "white":
+      return [255, 255, 255, 255];
+    case "cream":
+      return [217, 208, 189, 255];
+    case "dark":
+      return [24, 24, 29, 255];
+    default:
+      return [217, 208, 189, 255];
+  }
+}
+
+function handlePointerDown(event) {
+  if (currentTool !== "eraser" || !source) return;
+  isErasing = true;
+  if (typeof elements.resultCanvas.setPointerCapture === "function") {
+    try {
+      elements.resultCanvas.setPointerCapture(event.pointerId);
+    } catch {}
+  }
+  eraseAtPointer(event);
+}
+
+function handlePointerMove(event) {
+  if (currentTool !== "eraser" || !source) return;
+  drawEraserCursor(elements.resultCanvas, event);
+  if (isErasing) {
+    eraseAtPointer(event);
+  }
+}
+
+function handlePointerUp() {
+  if (isErasing) {
+    isErasing = false;
+  }
+}
+
+function eraseAtPointer(event) {
+  const canvas = elements.resultCanvas;
+  if (!canvas || !canvas.width) return;
+  const coords = getCanvasPixelCoords(canvas, event);
+  const width = canvas.width;
+  const height = canvas.height;
+
+  if (
+    !erasedLinesMask
+    || erasedMaskWidth !== width
+    || erasedMaskHeight !== height
+  ) {
+    erasedLinesMask = new Uint8Array(width * height);
+    erasedMaskWidth = width;
+    erasedMaskHeight = height;
+  }
+
+  const brushRadius = Math.max(1, Math.round(Number(elements.eraserSize ? elements.eraserSize.value : 16) / 2));
+  const r2 = brushRadius * brushRadius;
+
+  for (let dy = -brushRadius; dy <= brushRadius; dy += 1) {
+    const py = coords.y + dy;
+    if (py < 0 || py >= height) continue;
+    for (let dx = -brushRadius; dx <= brushRadius; dx += 1) {
+      if (dx * dx + dy * dy > r2) continue;
+      const px = coords.x + dx;
+      if (px < 0 || px >= width) continue;
+      erasedLinesMask[py * width + px] = 1;
+    }
+  }
+
+  scheduleRender(0);
+}
+
+function getCanvasPixelCoords(canvas, event) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / (rect.width || 1);
+  const scaleY = canvas.height / (rect.height || 1);
+  return {
+    x: Math.floor((event.clientX - rect.left) * scaleX),
+    y: Math.floor((event.clientY - rect.top) * scaleY),
+  };
+}
+
+function drawEraserCursor(canvas, event) {
+  const overlay = elements.eraserOverlay;
+  if (!overlay || !canvas || currentTool !== "eraser") {
+    clearEraserOverlay();
+    return;
+  }
+  overlay.width = canvas.width;
+  overlay.height = canvas.height;
+  const coords = getCanvasPixelCoords(canvas, event);
+  const brushRadius = Math.max(1, Number(elements.eraserSize ? elements.eraserSize.value : 16) / 2);
+
+  const context = overlay.getContext("2d");
+  context.clearRect(0, 0, overlay.width, overlay.height);
+  context.strokeStyle = "#ff6c56";
+  context.lineWidth = Math.max(1, Math.round(canvas.width / 250));
+  context.beginPath();
+  context.arc(coords.x, coords.y, brushRadius, 0, Math.PI * 2);
+  context.stroke();
+  context.fillStyle = "rgba(255, 108, 86, 0.25)";
+  context.fill();
+}
+
+function clearEraserOverlay() {
+  const overlay = elements.eraserOverlay;
+  if (!overlay || !overlay.width) return;
+  const context = overlay.getContext("2d");
+  context.clearRect(0, 0, overlay.width, overlay.height);
 }

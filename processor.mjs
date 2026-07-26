@@ -12,6 +12,7 @@ const DEFAULT_OPTIONS = Object.freeze({
   regionCleanup: 2,
   dither: 0,
   inkColor: [15, 15, 18],
+  suppressInnerLines: true,
 });
 
 const BAYER_4 = [
@@ -65,6 +66,9 @@ export function stylizeImageData(imageData, suppliedOptions = {}) {
     cleanedLabels,
     palette,
     smoothed,
+    suppliedOptions.fillMap,
+    suppliedOptions.fillColors,
+    suppliedOptions.backgroundFill,
   );
   const structurePixels = boxBlur(
     smoothed,
@@ -82,6 +86,7 @@ export function stylizeImageData(imageData, suppliedOptions = {}) {
     options.hueWeight,
     options.valueWeight,
     suppliedOptions.componentMap,
+    options.suppressInnerLines,
   );
   const thickMask = dilateMask(
     edgeMask,
@@ -89,6 +94,13 @@ export function stylizeImageData(imageData, suppliedOptions = {}) {
     height,
     Math.max(0, options.outlineWidth - 1),
   );
+
+  if (
+    suppliedOptions.erasedLinesMask
+    && suppliedOptions.erasedLinesMask.length === width * height
+  ) {
+    applyErasedLines(thickMask, suppliedOptions.erasedLinesMask);
+  }
 
   applyInk(
     quantized,
@@ -119,6 +131,7 @@ function normalizeOptions(options) {
     regionCleanup: clamp(Math.round(merged.regionCleanup), 0, 3),
     dither: clamp(merged.dither, 0, 0.5),
     inkColor: normalizeInkColor(merged.inkColor),
+    suppressInnerLines: merged.suppressInnerLines !== false,
   };
 }
 
@@ -420,16 +433,34 @@ function regionMinimumSize(cleanupLevel) {
   return [0, 4, 10, 22][cleanupLevel] ?? 10;
 }
 
-function renderLabels(labels, palette, alphaSource) {
+function renderLabels(labels, palette, alphaSource, fillMap, fillColors, backgroundFill) {
   const pixels = new Uint8ClampedArray(alphaSource.length);
 
   for (let index = 0; index < labels.length; index += 1) {
     const offset = index * 4;
-    const color = palette[labels[index]];
-    pixels[offset] = color[0];
-    pixels[offset + 1] = color[1];
-    pixels[offset + 2] = color[2];
-    pixels[offset + 3] = alphaSource[offset + 3];
+    const regionId = fillMap ? fillMap[index] : 0;
+
+    let fill = null;
+    if (fillColors && fillColors.has && fillColors.has(regionId)) {
+      fill = fillColors.get(regionId);
+    } else if (fillColors && fillColors[regionId] !== undefined) {
+      fill = fillColors[regionId];
+    } else if (regionId === 0 && backgroundFill !== undefined && backgroundFill !== null) {
+      fill = backgroundFill;
+    }
+
+    if (fill) {
+      pixels[offset] = fill[0];
+      pixels[offset + 1] = fill[1];
+      pixels[offset + 2] = fill[2];
+      pixels[offset + 3] = fill[3] !== undefined ? fill[3] : 255;
+    } else {
+      const color = palette[labels[index]];
+      pixels[offset] = color[0];
+      pixels[offset + 1] = color[1];
+      pixels[offset + 2] = color[2];
+      pixels[offset + 3] = alphaSource[offset + 3];
+    }
   }
 
   return pixels;
@@ -445,6 +476,7 @@ function detectEdges(
   hueWeight,
   valueWeight,
   componentMap,
+  suppressInnerLines = true,
 ) {
   const raw = new Uint8Array(width * height);
   const cleaned = new Uint8Array(width * height);
@@ -515,6 +547,14 @@ function detectEdges(
       }
 
       if (neighbors >= 2) cleaned[index] = 1;
+    }
+  }
+
+  if (suppressInnerLines && componentMap && componentMap.length === width * height) {
+    for (let index = 0; index < cleaned.length; index += 1) {
+      if (componentMap[index] > 0) {
+        cleaned[index] = 0;
+      }
     }
   }
 
@@ -613,10 +653,19 @@ function dilateMask(source, width, height, radius) {
   return output;
 }
 
+function applyErasedLines(mask, erasedLinesMask) {
+  for (let index = 0; index < mask.length; index += 1) {
+    if (erasedLinesMask[index]) {
+      mask[index] = 0;
+    }
+  }
+}
+
 function applyInk(pixels, mask, inkColor, strength) {
   for (let index = 0; index < mask.length; index += 1) {
     if (!mask[index]) continue;
     const offset = index * 4;
+    if (pixels[offset + 3] === 0) continue;
     pixels[offset] = mix(pixels[offset], inkColor[0], strength);
     pixels[offset + 1] = mix(pixels[offset + 1], inkColor[1], strength);
     pixels[offset + 2] = mix(pixels[offset + 2], inkColor[2], strength);

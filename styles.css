@@ -351,6 +351,102 @@ h1 em {
   cursor: not-allowed;
 }
 
+.checkbox-control {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+  color: var(--paper-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.checkbox-control input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--cyan);
+  cursor: pointer;
+}
+
+.fill-controls {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--rule);
+  display: grid;
+  gap: 10px;
+}
+
+.fill-color-label {
+  display: grid;
+  gap: 6px;
+  color: var(--paper-dim);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fill-color-label select {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  background: var(--panel-light);
+  color: var(--paper);
+  font-size: 11px;
+}
+
+.fill-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.fill-buttons button,
+.btn-subtle {
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  background: var(--panel-light);
+  color: var(--paper-dim);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+}
+
+.fill-buttons button:hover:not(:disabled),
+.btn-subtle:hover:not(:disabled) {
+  border-color: var(--acid);
+  color: var(--paper);
+}
+
+.fill-buttons button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.tool-switcher {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.tool-btn {
+  min-height: 38px;
+  border: 1px solid var(--rule);
+  background: var(--panel-light);
+  color: var(--paper-dim);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tool-btn.is-active {
+  border-color: var(--cyan);
+  background: rgba(105, 213, 219, 0.15);
+  color: var(--cyan);
+}
+
 .preset-grid button:hover {
   border-color: #74747f;
   color: var(--paper);
@@ -519,7 +615,8 @@ input[type="range"]::-moz-range-thumb {
   cursor: wait;
 }
 
-#ml-overlay {
+#ml-overlay,
+#eraser-overlay {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -529,6 +626,10 @@ input[type="range"]::-moz-range-thumb {
   transform: translate(-50%, -50%);
   pointer-events: none;
   box-shadow: none;
+}
+
+#eraser-overlay {
+  z-index: 3;
 }
 
 .result-artboard canvas {

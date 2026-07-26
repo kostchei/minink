@@ -145,3 +145,85 @@ test("an ML component map contributes a one-pixel component boundary", () => {
   assert.equal(boundaryInk, 32);
   assert.equal(interiorInk, 0);
 });
+
+test("suppressInnerLines removes automatic interior noise lines inside ML components", () => {
+  const width = 30;
+  const height = 30;
+  // High contrast checkerboard pattern inside component that would normally produce edge noise
+  const source = makeImageData(width, height, (x, y) => (
+    (x + y) % 2 === 0 ? [240, 240, 240] : [20, 20, 20]
+  ));
+  const componentMap = new Uint16Array(width * height);
+  for (let y = 5; y < 25; y += 1) {
+    for (let x = 5; x < 25; x += 1) {
+      componentMap[y * width + x] = 1;
+    }
+  }
+
+  const resultWithSuppression = stylizeImageData(source, {
+    edgeThreshold: 0.1,
+    componentMap,
+    suppressInnerLines: true,
+  });
+
+  let interiorInkCount = 0;
+  for (let y = 6; y < 24; y += 1) {
+    for (let x = 6; x < 24; x += 1) {
+      const offset = (y * width + x) * 4;
+      if (
+        resultWithSuppression.imageData.data[offset] === 15
+        && resultWithSuppression.imageData.data[offset + 1] === 15
+        && resultWithSuppression.imageData.data[offset + 2] === 18
+      ) {
+        interiorInkCount += 1;
+      }
+    }
+  }
+
+  assert.equal(interiorInkCount, 0, "Expected no interior ink lines inside component when suppressInnerLines is active");
+});
+
+test("erasedLinesMask removes specified ink lines from final output", () => {
+  const source = makeImageData(20, 20, (x) => (
+    x < 10 ? [240, 240, 240] : [20, 20, 20]
+  ));
+
+  const initial = stylizeImageData(source, { edgeThreshold: 0.1 });
+  const erasedLinesMask = new Uint8Array(20 * 20);
+  erasedLinesMask.fill(1);
+
+  const erasedResult = stylizeImageData(source, {
+    edgeThreshold: 0.1,
+    erasedLinesMask,
+  });
+
+  let inkCount = 0;
+  for (let offset = 0; offset < erasedResult.imageData.data.length; offset += 4) {
+    if (
+      erasedResult.imageData.data[offset] === 15
+      && erasedResult.imageData.data[offset + 1] === 15
+      && erasedResult.imageData.data[offset + 2] === 18
+    ) {
+      inkCount += 1;
+    }
+  }
+
+  assert.equal(inkCount, 0, "Expected all ink lines to be erased where erasedLinesMask is set");
+});
+
+test("backgroundFill replaces background pixels with specified color or transparency", () => {
+  const width = 20;
+  const height = 20;
+  const source = makeImageData(width, height, () => [100, 100, 100]);
+  const fillMap = new Uint16Array(width * height);
+  const backgroundFill = [255, 255, 255, 0]; // Transparent background
+
+  const result = stylizeImageData(source, {
+    fillMap,
+    backgroundFill,
+  });
+
+  const firstPixelAlpha = result.imageData.data[3];
+  assert.equal(firstPixelAlpha, 0, "Expected background pixels to be transparent when backgroundFill has alpha=0");
+});
+
