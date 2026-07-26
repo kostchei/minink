@@ -13,7 +13,7 @@ set BUILD_OUTPUT=build.rbxl
 :: ====================================================================
 
 echo ========================================================
-echo         MINI INK GIT SYNC & DEPLOYMENT AUTOMATION
+echo         MINI INK GIT SYNC AND DEPLOYMENT AUTOMATION
 echo ========================================================
 echo.
 
