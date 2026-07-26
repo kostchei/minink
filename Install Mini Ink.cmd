@@ -27,19 +27,16 @@ if "%PYTHON_CMD%"=="" (
     echo Please install Python from https://www.python.org/downloads/
     echo.
 ) else (
-    echo [OK] Python found (%PYTHON_CMD%).
+    echo [OK] Python found: %PYTHON_CMD%.
 )
 
 :: 2. Ensure icon exists
 echo.
 echo [2/3] Verifying icon files...
-if not exist "%~dp0icon.ico" (
-    if not "%PYTHON_CMD%"=="" (
-        %PYTHON_CMD% -c "from PIL import Image, ImageDraw; img = Image.new('RGBA', (64, 64), (16, 16, 20, 255)); draw = ImageDraw.Draw(img); draw.ellipse([10, 40, 50, 58], fill=(215, 255, 100, 220)); draw.polygon([(14, 50), (28, 36), (33, 41), (19, 55)], fill=(239, 75, 54)); draw.polygon([(28, 36), (34, 30), (39, 35), (33, 41)], fill=(105, 213, 219)); draw.polygon([(34, 30), (48, 14), (40, 32)], fill=(241, 234, 217)); draw.ellipse([47, 9, 53, 15], fill=(239, 75, 54)); img.save('icon.ico', format='ICO', sizes=[(16,16), (32,32), (48,48), (64,64)])" >nul 2>nul
-    )
-)
+if not exist "%~dp0icon.ico" call :GENERATE_ICON
+
 if exist "%~dp0icon.ico" (
-    echo [OK] Cute paintbrush icon verified (icon.ico).
+    echo [OK] Paintbrush icon verified - icon.ico
 ) else (
     echo [NOTE] Icon file ready.
 )
@@ -60,6 +57,12 @@ echo You can launch Mini Ink anytime via:
 echo   - Desktop shortcut (paintbrush icon)
 echo   - Windows Start Menu ("Mini Ink")
 echo   - Double-clicking "Start Mini Ink.cmd"
-echo.
+goto :END
 
+:GENERATE_ICON
+if "%PYTHON_CMD%"=="" exit /b
+%PYTHON_CMD% -c "from PIL import Image, ImageDraw; img = Image.new('RGBA', (64, 64), (16, 16, 20, 255)); draw = ImageDraw.Draw(img); draw.ellipse([10, 40, 50, 58], fill=(215, 255, 100, 220)); draw.polygon([(14, 50), (28, 36), (33, 41), (19, 55)], fill=(239, 75, 54)); draw.polygon([(28, 36), (34, 30), (39, 35), (33, 41)], fill=(105, 213, 219)); draw.polygon([(34, 30), (48, 14), (40, 32)], fill=(241, 234, 217)); draw.ellipse([47, 9, 53, 15], fill=(239, 75, 54)); img.save('icon.ico', format='ICO', sizes=[(16,16), (32,32), (48,48), (64,64)])" >nul 2>nul
+exit /b
+
+:END
 endlocal

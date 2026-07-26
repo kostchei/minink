@@ -57,6 +57,20 @@ const PRESETS = {
     regionCleanup: 1,
     dither: 3,
   },
+  hardware: {
+    resolution: 512,
+    paletteSize: 18,
+    edgeDetail: 48,
+    outlineWidth: 1,
+    hueWeight: 90,
+    valueWeight: 60,
+    saturation: 120,
+    contrast: 115,
+    shadowLift: 15,
+    smoothing: 2,
+    regionCleanup: 2,
+    dither: 0,
+  },
 };
 
 const elements = {
@@ -181,7 +195,7 @@ createDemoMini();
 
 async function loadFile(file) {
   if (!isSupportedImage(file)) {
-    setStatus("Choose an image file such as JPG, PNG, or WebP.", "error");
+    setStatus("Choose an image file such as JPG, PNG, WebP, AVIF, or BMP.", "error");
     return;
   }
 
@@ -199,7 +213,12 @@ async function loadFile(file) {
     setStatus("Photo ready. Adjust the style or export it.", "success");
   } catch (error) {
     console.error(error);
-    setStatus("That image could not be read. Try exporting it as JPG or PNG.", "error");
+    const isHeic = /\.(?:heic|heif)$/i.test(file.name);
+    if (isHeic) {
+      setStatus("HEIC photos are not natively supported by your browser. Please convert to JPG, PNG, or WebP.", "error");
+    } else {
+      setStatus("That image format could not be read by your browser. Try converting it to JPG or PNG.", "error");
+    }
   }
 }
 
@@ -241,8 +260,10 @@ function firstDroppedFile(dataTransfer) {
 }
 
 function isSupportedImage(file) {
-  return file.type.startsWith("image/")
-    || /\.(?:jpe?g|png|webp)$/i.test(file.name);
+  return (
+    (Boolean(file.type) && file.type.startsWith("image/"))
+    || /\.(?:jpe?g|png|webp|avif|bmp|gif|tiff?|jfif|heic|heif|svg)$/i.test(file.name)
+  );
 }
 
 function setDraggingState(isDragging) {
