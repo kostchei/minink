@@ -11,12 +11,20 @@ TOOL_DIRECTORY = Path(__file__).resolve().parent
 URL = f"http://{HOST}:{PORT}"
 
 
+class NoCacheHTTPRequestHandler(SimpleHTTPRequestHandler):
+    def end_headers(self) -> None:
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
+
 def open_browser() -> None:
     webbrowser.open(URL)
 
 
 def main() -> None:
-    handler = partial(SimpleHTTPRequestHandler, directory=str(TOOL_DIRECTORY))
+    handler = partial(NoCacheHTTPRequestHandler, directory=str(TOOL_DIRECTORY))
     try:
         server = ThreadingHTTPServer((HOST, PORT), handler)
     except OSError:
