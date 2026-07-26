@@ -346,7 +346,20 @@
 
             <article class="artboard result-artboard">
               <header>
-                <span>Mini Ink</span>
+                <div class="header-title-group">
+                  <span>Mini Ink</span>
+                  <div class="artboard-quick-tools">
+                    <button id="quick-eraser-toggle" type="button" class="artboard-tool-btn" title="Toggle Line Eraser Tool">
+                      <span aria-hidden="true">🧹</span> Line Eraser
+                    </button>
+                    <button id="quick-fill-component" type="button" class="artboard-tool-btn" title="Fill Selected Component" disabled>
+                      <span aria-hidden="true">🎨</span> Fill Object
+                    </button>
+                    <button id="quick-clear-bg" type="button" class="artboard-tool-btn" title="Clear Background Outside Selection">
+                      <span aria-hidden="true">🖼️</span> Clear Background
+                    </button>
+                  </div>
+                </div>
                 <small id="output-meta">No output</small>
               </header>
               <div class="canvas-wrap checkerboard">

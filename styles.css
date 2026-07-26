@@ -209,6 +209,10 @@ h1 em {
 .controls-panel {
   border-right: 1px solid var(--rule);
   background: #15151a;
+  overflow-y: auto;
+  max-height: calc(100vh - 72px);
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
 }
 
 .drop-zone {
@@ -572,6 +576,51 @@ input[type="range"]::-moz-range-thumb {
 
 .result-artboard > header span {
   color: var(--acid);
+}
+
+.header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.artboard-quick-tools {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.artboard-tool-btn {
+  height: 28px;
+  padding: 0 9px;
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  border: 1px solid var(--rule);
+  background: var(--panel-light);
+  color: var(--paper-dim);
+  font-size: 10px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.artboard-tool-btn:hover:not(:disabled) {
+  border-color: var(--cyan);
+  color: var(--paper);
+  background: #252630;
+}
+
+.artboard-tool-btn.is-active {
+  border-color: var(--cyan);
+  background: rgba(105, 213, 219, 0.2);
+  color: var(--cyan);
+}
+
+.artboard-tool-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .artboard > header small {

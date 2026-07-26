@@ -86,6 +86,9 @@ const elements = {
   clearErased: document.querySelector("#clear-erased"),
   eraserOverlay: document.querySelector("#eraser-overlay"),
   resultArtboard: document.querySelector(".result-artboard"),
+  quickEraserToggle: document.querySelector("#quick-eraser-toggle"),
+  quickFillComponent: document.querySelector("#quick-fill-component"),
+  quickClearBg: document.querySelector("#quick-clear-bg"),
 };
 
 let source = null;
@@ -157,6 +160,14 @@ if (elements.eraserSize) {
   });
 }
 if (elements.clearErased) elements.clearErased.addEventListener("click", clearErasedLinesAction);
+
+if (elements.quickEraserToggle) {
+  elements.quickEraserToggle.addEventListener("click", () => {
+    setToolMode(currentTool === "eraser" ? "select" : "eraser");
+  });
+}
+if (elements.quickFillComponent) elements.quickFillComponent.addEventListener("click", fillComponentAction);
+if (elements.quickClearBg) elements.quickClearBg.addEventListener("click", clearBackgroundAction);
 
 if (elements.resultCanvas) {
   elements.resultCanvas.addEventListener("pointerdown", handlePointerDown);
@@ -585,7 +596,7 @@ async function selectMlComponent(event) {
     mlCurrentMask = await mlSegmenter.segment(point);
     drawMlOverlay();
     elements.mlKeep.disabled = false;
-    if (elements.fillComponent) elements.fillComponent.disabled = false;
+    updateFillButtonState(false);
     setMlStatus("Mask ready. Keep it, or click another part to try again.");
     scheduleRender(0);
   } catch (error) {
@@ -601,7 +612,7 @@ function keepMlBoundary() {
   mlKeptMasks.push(mlCurrentMask);
   mlCurrentMask = null;
   elements.mlKeep.disabled = true;
-  if (elements.fillComponent) elements.fillComponent.disabled = false;
+  updateFillButtonState(false);
   drawMlOverlay();
   setMlStatus(`${mlKeptMasks.length} ML component ${mlKeptMasks.length === 1 ? "line" : "lines"} kept.`);
   scheduleRender(0);
@@ -612,7 +623,7 @@ function clearMlBoundaries() {
   mlKeptMasks = [];
   mlReady = false;
   elements.mlKeep.disabled = true;
-  if (elements.fillComponent) elements.fillComponent.disabled = true;
+  updateFillButtonState(true);
   elements.mlEnable.disabled = false;
   elements.mlEnable.textContent = mlSegmenter ? "Re-scan photo" : "Enable ML boundaries";
   elements.sourceCanvas.classList.remove("is-ml-ready", "is-ml-working");
@@ -720,10 +731,16 @@ function clearErasedLinesAction() {
   setStatus("Erased lines restored.", "success");
 }
 
+function updateFillButtonState(disabled) {
+  if (elements.fillComponent) elements.fillComponent.disabled = disabled;
+  if (elements.quickFillComponent) elements.quickFillComponent.disabled = disabled;
+}
+
 function setToolMode(mode) {
   currentTool = mode;
   if (elements.toolSelect) elements.toolSelect.classList.toggle("is-active", mode === "select");
   if (elements.toolEraser) elements.toolEraser.classList.toggle("is-active", mode === "eraser");
+  if (elements.quickEraserToggle) elements.quickEraserToggle.classList.toggle("is-active", mode === "eraser");
   if (elements.resultArtboard) elements.resultArtboard.classList.toggle("is-eraser-mode", mode === "eraser");
   if (mode !== "eraser") {
     clearEraserOverlay();
