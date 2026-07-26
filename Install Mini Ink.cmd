@@ -44,37 +44,13 @@ if exist "%~dp0icon.ico" (
     echo [NOTE] Icon file ready.
 )
 
-:: 3. Create Desktop & Start Menu Shortcuts
+:: 3. Create Desktop & Start Menu Shortcuts via PowerShell
 echo.
 echo [3/3] Creating Windows shortcuts...
-set VBS_SCRIPT="%TEMP%\CreateMiniInkShortcuts.vbs"
-set DESKTOP_LINK=%USERPROFILE%\Desktop\Mini Ink.lnk
-set STARTMENU_LINK=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Mini Ink.lnk
-set TARGET_CMD=%~dp0Start Mini Ink.cmd
-set ICON_PATH=%~dp0icon.ico
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $target = '%~dp0Start Mini Ink.cmd'; $work = '%~dp0'; $icon = '%~dp0icon.ico'; $desk = $ws.SpecialFolders('Desktop') + '\Mini Ink.lnk'; $prog = $ws.SpecialFolders('Programs') + '\Mini Ink.lnk'; $s1 = $ws.CreateShortcut($desk); $s1.TargetPath = $target; $s1.WorkingDirectory = $work; if (Test-Path $icon) { $s1.IconLocation = $icon }; $s1.Save(); $s2 = $ws.CreateShortcut($prog); $s2.TargetPath = $target; $s2.WorkingDirectory = $work; if (Test-Path $icon) { $s2.IconLocation = $icon }; $s2.Save();"
 
-echo Set oWS = WScript.CreateObject("WScript.Shell") > %VBS_SCRIPT%
-echo Set oLink1 = oWS.CreateShortcut("%DESKTOP_LINK%") >> %VBS_SCRIPT%
-echo oLink1.TargetPath = "%TARGET_CMD%" >> %VBS_SCRIPT%
-echo oLink1.WorkingDirectory = "%~dp0" >> %VBS_SCRIPT%
-if exist "%ICON_PATH%" (
-    echo oLink1.IconLocation = "%ICON_PATH%" >> %VBS_SCRIPT%
-)
-echo oLink1.Save >> %VBS_SCRIPT%
-
-echo Set oLink2 = oWS.CreateShortcut("%STARTMENU_LINK%") >> %VBS_SCRIPT%
-echo oLink2.TargetPath = "%TARGET_CMD%" >> %VBS_SCRIPT%
-echo oLink2.WorkingDirectory = "%~dp0" >> %VBS_SCRIPT%
-if exist "%ICON_PATH%" (
-    echo oLink2.IconLocation = "%ICON_PATH%" >> %VBS_SCRIPT%
-)
-echo oLink2.Save >> %VBS_SCRIPT%
-
-cscript //nologo %VBS_SCRIPT%
-if exist %VBS_SCRIPT% del %VBS_SCRIPT%
-
-echo [OK] Desktop shortcut created with paintbrush icon: %DESKTOP_LINK%
-echo [OK] Start Menu shortcut created: %STARTMENU_LINK%
+echo [OK] Desktop shortcut created with paintbrush icon.
+echo [OK] Start Menu shortcut created ("Mini Ink").
 echo.
 echo ===================================================
 echo           MINI INK INSTALLATION COMPLETE!
